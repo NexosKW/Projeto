@@ -27,18 +27,34 @@ function normalizeName(nome) {
   return String(nome || "").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-/** Converte entrada do usuário em array de números válidos (0-10) */
+/**
+ * Converte entrada do usuário em array de números válidos (0–10)
+ * e sinaliza se houve número negativo na entrada.
+ * Retorna um objeto { notas, temNegativo }.
+ */
 function parseNotas(input) {
-  if (!input) return [];
-  const partes = String(input)
-    .split(/[,\s;]+/) // aceita vírgula, espaço ou ponto-e-vírgula
-    .map((p) => p.replace(",", ".")) // "8,5" -> "8.5"
-    .map(Number)
-    .filter((n) => Number.isFinite(n) && n >= 0 && n <= 10);
-  return partes;
+  const result = { notas: [], temNegativo: false };
+  if (!input) return result;
+
+  const tokens = String(input)
+    .split(/[,\s;]+/)           // aceita vírgula, espaço ou ponto-e-vírgula
+    .filter(Boolean)
+    .map((s) => s.replace(",", ".")); // aceita "8,5"
+
+  const numeros = tokens.map(Number);
+
+  // Detecta qualquer número negativo informado
+  if (numeros.some((n) => Number.isFinite(n) && n < 0)) {
+    result.temNegativo = true;
+    return result;
+  }
+
+  // Mantém apenas valores válidos de 0 a 10
+  result.notas = numeros.filter((n) => Number.isFinite(n) && n >= 0 && n <= 10);
+  return result;
 }
 
-/** Média de um estudante (segura para listas vazias) */
+/** Média de um estudante (retorna 0 se não houver notas) */
 function mediaDoEstudante(estudante) {
   const notas = estudante.notas || [];
   if (notas.length === 0) return 0;
@@ -46,34 +62,15 @@ function mediaDoEstudante(estudante) {
   return soma / notas.length;
 }
 
-/** Média geral (média das médias) */
-function mediaGeralTurma(lista) {
-  if (lista.length === 0) return 0;
-  const medias = lista.map(mediaDoEstudante);
-  const soma = medias.reduce((acc, m) => acc + m, 0);
-  return soma / medias.length;
-}
-
-/** Retorna o estudante com maior média (ou null se vazio) */
-function melhorAluno(lista) {
-  if (lista.length === 0) return null;
-  let melhor = lista[0];
-  for (let i = 1; i < lista.length; i++) {
-    if (mediaDoEstudante(lista[i]) > mediaDoEstudante(melhor)) {
-      melhor = lista[i];
-    }
-  }
-  return melhor;
-}
-
-// ====== UI (entrada/saída) ======
+// ====== Menu / UI ======
 
 function mostrarMenu() {
   printTitle("Menu");
   console.log("1 - Cadastrar estudante");
   console.log("2 - Listar estudantes");
   console.log("3 - Buscar estudante");
-  console.log("4 - Calcular médias");
+  console.log("4 - Calcular médias (individual, geral e maior média)");
+  console.log("5 - Listar por situação (aprovados/recuperação/reprovados)");
   console.log("0 - Sair");
 
   rl.question("Escolha uma opção: ", (opcao) => {
@@ -89,6 +86,9 @@ function mostrarMenu() {
         break;
       case "4":
         calcularMedias();
+        break;
+      case "5":
+        listarPorSituacao();
         break;
       case "0":
         console.log("Saindo...");
@@ -106,14 +106,32 @@ function cadastrarEstudante() {
   rl.question("Nome: ", (nome) => {
     rl.question("Idade: ", (idadeStr) => {
       rl.question("Notas separadas por vírgula (ex: 8,7,10): ", (entradaNotas) => {
-        const idade = parseInt(idadeStr);
-        const notas = parseNotas(entradaNotas);
+        // Validação de idade: inteiro e não negativo
+        const idade = Number(String(idadeStr).trim());
+        const idadeEhInteira = Number.isInteger(idade);
 
-        // Mantém simples, mas evita NaN e notas vazias
-        if (!nome.trim() || !Number.isFinite(idade)) {
-          console.log("❌ Nome e idade válidos são obrigatórios.");
+        const { notas, temNegativo } = parseNotas(entradaNotas);
+
+        if (!nome.trim()) {
+          console.log("❌ Nome é obrigatório.");
           return mostrarMenu();
         }
+
+        if (!idadeEhInteira || !Number.isFinite(idade)) {
+          console.log("❌ Idade deve ser um número inteiro válido.");
+          return mostrarMenu();
+        }
+
+        if (idade < 0) {
+          console.log("❌ Idade não pode ser negativa.");
+          return mostrarMenu();
+        }
+
+        if (temNegativo) {
+          console.log("❌ Não são permitidos números negativos nas notas.");
+          return mostrarMenu();
+        }
+
         if (notas.length === 0) {
           console.log("❌ Informe pelo menos uma nota válida (0 a 10).");
           return mostrarMenu();
@@ -143,9 +161,8 @@ function buscarEstudante() {
   printTitle("Buscar Estudante");
   rl.question("Digite o nome: ", (nomeBusca) => {
     const alvo = normalizeName(nomeBusca);
-    const encontrado = estudantes.find(
-      (e) => normalizeName(e.nome) === alvo
-    );
+    const encontrado = estudantes.find((e) => normalizeName(e.nome) === alvo);
+
     if (encontrado) {
       console.log("✅ Encontrado:");
       console.log(
@@ -167,22 +184,76 @@ function calcularMedias() {
     return mostrarMenu();
   }
 
-  // 1) Média individual
-  estudantes.forEach((e) => {
-    console.log(`${e.nome} → Média: ${mediaDoEstudante(e).toFixed(2)}`);
+  // 1) Médias individuais
+  const medias = estudantes.map((e) => ({
+    nome: e.nome,
+    media: mediaDoEstudante(e),
+  }));
+
+  medias.forEach((m) => {
+    console.log(`${m.nome} → Média: ${m.media.toFixed(2)}`);
   });
 
-  // 2) Média geral
-  const geral = mediaGeralTurma(estudantes);
-  console.log(`\n📊 Média geral da turma: ${geral.toFixed(2)}`);
+  // 2) Média geral (média das médias)
+  const somaMedias = medias.reduce((acc, m) => acc + m.media, 0);
+  const mediaGeral = somaMedias / medias.length;
+  console.log(`\n📊 Média geral da turma: ${mediaGeral.toFixed(2)}`);
 
-  // 3) Melhor aluno
-  const melhor = melhorAluno(estudantes);
-  if (melhor) {
-    console.log(
-      `🏅 Maior média: ${melhor.nome} (${mediaDoEstudante(melhor).toFixed(2)})`
-    );
+  // 3) Maior média
+  let melhor = medias[0];
+  for (let i = 1; i < medias.length; i++) {
+    if (medias[i].media > melhor.media) {
+      melhor = medias[i];
+    }
   }
+  console.log(`🏅 Maior média: ${melhor.nome} (${melhor.media.toFixed(2)})`);
+
+  mostrarMenu();
+}
+
+function listarPorSituacao() {
+  printTitle("Situação dos Estudantes");
+  if (estudantes.length === 0) {
+    console.log("Não há estudantes cadastrados.");
+    return mostrarMenu();
+  }
+
+  const aprovados = [];
+  const recuperacao = [];
+  const reprovados = [];
+
+  estudantes.forEach((e) => {
+    const media = mediaDoEstudante(e);
+    const item = { nome: e.nome, media };
+
+    if (media >= 7.0) {
+      aprovados.push(item);
+    } else if (media >= 5.0) {
+      recuperacao.push(item); // 5.0 a 6.99...
+    } else {
+      reprovados.push(item); // abaixo de 5.0
+    }
+  });
+
+  // Ordena por média (decrescente) para ler melhor
+  aprovados.sort((a, b) => b.media - a.media);
+  recuperacao.sort((a, b) => b.media - a.media);
+  reprovados.sort((a, b) => b.media - a.media);
+
+  function printLista(titulo, lista) {
+    console.log(`\n${titulo}:`);
+    if (lista.length === 0) {
+      console.log("  (nenhum)");
+    } else {
+      lista.forEach((it, i) =>
+        console.log(`  ${i + 1}. ${it.nome} — Média: ${it.media.toFixed(2)}`)
+      );
+    }
+  }
+
+  printLista("✅ Aprovados (média >= 7.0)", aprovados);
+  printLista("🟡 Recuperação (média entre 5.0 e 6.9)", recuperacao);
+  printLista("❌ Reprovados (média < 5.0)", reprovados);
 
   mostrarMenu();
 }
