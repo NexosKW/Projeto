@@ -1,5 +1,5 @@
 // =========================
-// CLI de Estudantes (simples)
+// CLI de Estudantes (simples) - Versão Aprimorada
 // =========================
 
 const readline = require("readline");
@@ -19,29 +19,38 @@ const estudantes = [
 
 /** Exibe um título bonitinho no console */
 function printTitle(texto) {
-  console.log("\n=== " + texto.toUpperCase() + " ===");
+  console.log("\n=== " + String(texto || "").toUpperCase() + " ===");
 }
 
-/** Tira espaços duplicados e deixa lower-case para comparar nomes */
+/**
+ * Tira espaços duplicados, remove acentos/pontuação e deixa lower-case
+ * para comparar nomes de forma mais “tolerante”.
+ */
 function normalizeName(nome) {
-  return String(nome || "").trim().replace(/\s+/g, " ").toLowerCase();
+  const s = String(nome || "")
+    .normalize("NFD") // separa acentos
+    .replace(/[\u0300-\u036f]/g, "") // remove acentos
+    .replace(/[^\p{L}\p{N}\s]/gu, "") // remove pontuação (mantém letras/números/espaços)
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+  return s;
 }
 
 /**
  * Converte entrada do usuário em array de números válidos (0–10)
  * e sinaliza se houve número negativo na entrada.
+ * Agora aceita vírgula/ponto como decimais e espaço, vírgula ou ; como separadores.
  * Retorna um objeto { notas, temNegativo }.
  */
 function parseNotas(input) {
   const result = { notas: [], temNegativo: false };
   if (!input) return result;
 
-  const tokens = String(input)
-    .split(/[,\s;]+/)           // aceita vírgula, espaço ou ponto-e-vírgula
-    .filter(Boolean)
-    .map((s) => s.replace(",", ".")); // aceita "8,5"
-
-  const numeros = tokens.map(Number);
+  // Captura números inteiros ou decimais com vírgula/ponto:
+  // exemplos válidos: "8", "9,5", "7.25", "-1", etc.
+  const tokens = String(input).match(/-?\d+(?:[.,]\d+)?/g) || [];
+  const numeros = tokens.map((t) => Number(t.replace(",", ".")));
 
   // Detecta qualquer número negativo informado
   if (numeros.some((n) => Number.isFinite(n) && n < 0)) {
@@ -104,43 +113,46 @@ function mostrarMenu() {
 function cadastrarEstudante() {
   printTitle("Cadastrar Estudante");
   rl.question("Nome: ", (nome) => {
-    rl.question("Idade: ", (idadeStr) => {
-      rl.question("Notas separadas por vírgula (ex: 8,7,10): ", (entradaNotas) => {
-        // Validação de idade: inteiro e não negativo
-        const idade = Number(String(idadeStr).trim());
-        const idadeEhInteira = Number.isInteger(idade);
+    rl.question("Idade (inteiro >= 0): ", (idadeStr) => {
+      rl.question(
+        "Notas (use espaço, vírgula ou ';' entre notas; aceita vírgula decimal, ex: 8,5 7 10): ",
+        (entradaNotas) => {
+          // Validação de idade: inteiro e não negativo
+          const idade = Number(String(idadeStr).trim());
+          const idadeEhInteira = Number.isInteger(idade);
 
-        const { notas, temNegativo } = parseNotas(entradaNotas);
+          const { notas, temNegativo } = parseNotas(entradaNotas);
 
-        if (!nome.trim()) {
-          console.log("❌ Nome é obrigatório.");
-          return mostrarMenu();
+          if (!String(nome).trim()) {
+            console.log("❌ Nome é obrigatório.");
+            return mostrarMenu();
+          }
+
+          if (!idadeEhInteira || !Number.isFinite(idade)) {
+            console.log("❌ Idade deve ser um número inteiro válido.");
+            return mostrarMenu();
+          }
+
+          if (idade < 0) {
+            console.log("❌ Idade não pode ser negativa.");
+            return mostrarMenu();
+          }
+
+          if (temNegativo) {
+            console.log("❌ Não são permitidos números negativos nas notas.");
+            return mostrarMenu();
+          }
+
+          if (notas.length === 0) {
+            console.log("❌ Informe pelo menos uma nota válida (0 a 10).");
+            return mostrarMenu();
+          }
+
+          estudantes.push({ nome: String(nome).trim(), idade, notas });
+          console.log("✅ Estudante cadastrado!");
+          mostrarMenu();
         }
-
-        if (!idadeEhInteira || !Number.isFinite(idade)) {
-          console.log("❌ Idade deve ser um número inteiro válido.");
-          return mostrarMenu();
-        }
-
-        if (idade < 0) {
-          console.log("❌ Idade não pode ser negativa.");
-          return mostrarMenu();
-        }
-
-        if (temNegativo) {
-          console.log("❌ Não são permitidos números negativos nas notas.");
-          return mostrarMenu();
-        }
-
-        if (notas.length === 0) {
-          console.log("❌ Informe pelo menos uma nota válida (0 a 10).");
-          return mostrarMenu();
-        }
-
-        estudantes.push({ nome: nome.trim(), idade, notas });
-        console.log("✅ Estudante cadastrado!");
-        mostrarMenu();
-      });
+      );
     });
   });
 }
@@ -152,27 +164,39 @@ function listarEstudantes() {
     return mostrarMenu();
   }
   estudantes.forEach((e, i) => {
-    console.log(`${i + 1}. ${e.nome} - Idade: ${e.idade}`);
+    const media = mediaDoEstudante(e);
+    console.log(`${i + 1}. ${e.nome} - Idade: ${e.idade} - Média: ${media.toFixed(2)}`);
   });
   mostrarMenu();
 }
 
 function buscarEstudante() {
   printTitle("Buscar Estudante");
-  rl.question("Digite o nome: ", (nomeBusca) => {
+  rl.question("Digite parte do nome (ex.: 'pablo' ou 'henrique'): ", (nomeBusca) => {
     const alvo = normalizeName(nomeBusca);
-    const encontrado = estudantes.find((e) => normalizeName(e.nome) === alvo);
-
-    if (encontrado) {
-      console.log("✅ Encontrado:");
-      console.log(
-        `Nome: ${encontrado.nome} | Idade: ${encontrado.idade} | Notas: [${encontrado.notas.join(
-          ", "
-        )}] | Média: ${mediaDoEstudante(encontrado).toFixed(2)}`
-      );
-    } else {
-      console.log("❌ Não encontrado.");
+    if (!alvo) {
+      console.log("❌ Digite algum texto para buscar.");
+      return mostrarMenu();
     }
+
+    const resultados = estudantes.filter((e) =>
+      normalizeName(e.nome).includes(alvo)
+    );
+
+    if (resultados.length === 0) {
+      console.log("❌ Nenhum estudante encontrado.");
+      return mostrarMenu();
+    }
+
+    console.log(`✅ Encontrado(s) ${resultados.length}:`);
+    resultados.forEach((e, i) => {
+      console.log(
+        `${i + 1}. ${e.nome} | Idade: ${e.idade} | Notas: [${e.notas.join(
+          ", "
+        )}] | Média: ${mediaDoEstudante(e).toFixed(2)}`
+      );
+    });
+
     mostrarMenu();
   });
 }
@@ -260,4 +284,3 @@ function listarPorSituacao() {
 
 // ====== Start ======
 mostrarMenu();
-
